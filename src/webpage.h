@@ -474,17 +474,20 @@ signals:
     void navigationRequested(const QUrl &url, const QString &navigationType, bool navigationLocked, bool isMainFrame);
     void rawPageCreated(QObject *page);
     void closing(QObject *page);
+    void certificate(const QString &data);// CReyes. Added on 21/01/2015
 
 private slots:
     void finish(bool ok);
     void setupFrame(QWebFrame *frame = NULL);
     void updateLoadingProgress(int progress);
+    void replyFinished(QNetworkReply * reply);// CReyes. Added on 21/01/2015
 
 private:
     QImage renderImage();
     bool renderPdf(const QString &fileName);
     void applySettings(const QVariantMap &defaultSettings);
     QString userAgent() const;
+    QString pairSeparateString(QString content, QString separator);// CReyes. Added on 21/01/2015
 
     /**
      * Switches focus from the Current Frame to the Child Frame, identified by `frame`.

@@ -261,6 +261,8 @@ function decorateNewPage(opts, page) {
     definePageSignalHandler(page, handlers, "onConsoleMessage", "javaScriptConsoleMessageSent");
 
     definePageSignalHandler(page, handlers, "onClosing", "closing");
+    
+    definePageSignalHandler(page, handlers, "onCertificate", "certificate");
 
     // Private callback for "page.open()"
     definePageSignalHandler(page, handlers, "_onPageOpenFinished", "loadFinished");

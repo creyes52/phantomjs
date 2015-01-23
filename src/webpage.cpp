@@ -55,6 +55,7 @@
 #include <QDebug>
 #include <QImageWriter>
 #include <QUuid>
+#include <QtNetwork/QtNetwork>
 
 #include <gifwriter.h>
 
@@ -66,6 +67,7 @@
 #include "callback.h"
 #include "cookiejar.h"
 #include "system.h"
+#include <string>
 
 #ifdef Q_OS_WIN32
 #include <io.h>
@@ -323,7 +325,7 @@ WebPage::WebPage(QObject *parent, const QUrl &baseUrl)
     m_mainFrame->setHtml(BLANK_HTML, baseUrl);
 
     Config *phantomCfg = Phantom::instance()->config();
-
+    
     // NOTE: below you can see that between all the event handlers
     // we listen for, "SLOT(setupFrame())" is connected to 2 signals:
     //   1. page.loadFinished
@@ -346,7 +348,7 @@ WebPage::WebPage(QObject *parent, const QUrl &baseUrl)
     connect(m_customWebPage, SIGNAL(loadFinished(bool)), SLOT(finish(bool)), Qt::QueuedConnection);
     connect(m_customWebPage, SIGNAL(windowCloseRequested()), this, SLOT(close()), Qt::QueuedConnection);
     connect(m_customWebPage, SIGNAL(loadProgress(int)), this, SLOT(updateLoadingProgress(int)));
-
+    
     // Start with transparent background.
     QPalette palette = m_customWebPage->palette();
     palette.setBrush(QPalette::Base, Qt::transparent);
@@ -388,7 +390,10 @@ WebPage::WebPage(QObject *parent, const QUrl &baseUrl)
             SIGNAL(resourceError(QVariant)));
     connect(m_networkAccessManager, SIGNAL(resourceTimeout(QVariant)),
             SIGNAL(resourceTimeout(QVariant)));
-
+    connect(m_networkAccessManager,
+	    SIGNAL(finished(QNetworkReply*)), this, 
+	    SLOT(replyFinished(QNetworkReply*)) );
+    
     m_customWebPage->setViewportSize(QSize(400, 300));
 }
 
@@ -596,6 +601,21 @@ QString WebPage::userAgent() const
     return m_customWebPage->m_userAgent;
 }
 
+QString WebPage::pairSeparateString(QString content, QString separator)
+{
+	QString res = "";
+	int i=0;
+	for(i=0; i < content.length(); i+=2) {
+		res.append( content.mid(i, 2) );
+		res.append(separator);
+	}
+	res = res.append( content.mid(i, content.length() - 1) );// add anything left
+	
+	
+	
+	return res;
+}
+
 void WebPage::setNavigationLocked(bool lock)
 {
     m_navigationLocked = lock;
@@ -785,6 +805,8 @@ void WebPage::openUrl(const QString &address, const QVariant &op, const QVariant
 
     applySettings(settings);
     m_customWebPage->triggerAction(QWebPage::Stop);
+    
+    std::string utf8_text = address.toUtf8().constData();
 
     if (op.type() == QVariant::String)
         operation = op.toString();
@@ -1578,6 +1600,44 @@ void WebPage::updateLoadingProgress(int progress)
 {
     qDebug() << "WebPage - updateLoadingProgress:" << progress;
     m_loadingProgress = progress;
+}
+
+void WebPage::replyFinished(QNetworkReply * reply)
+{
+    QSslConfiguration sslconf = reply->sslConfiguration();
+    QList<QSslCertificate> list;
+    
+    //list.append( sslconf.caCertificates()       );
+    //list.append( sslconf.peerCertificateChain() );
+    list.append(sslconf.peerCertificate());
+    QString output;
+
+    for(int i=0; i < list.size(); i++) {
+      QSslCertificate cert = list.at(i);
+      QSslKey pubKey  = cert.publicKey();
+      QByteArray byte = pubKey.toPem().toBase64();
+      QString str     = QString(byte);
+
+      QString md5    = pairSeparateString(QString(QCryptographicHash::hash(cert.toDer(), QCryptographicHash::Md5).toHex()),  ":" );
+      QString sha1   = pairSeparateString(QString(QCryptographicHash::hash(cert.toDer(), QCryptographicHash::Sha1).toHex()), ":" );
+
+      QHash<QString, QString> result;
+      result["issuer"]  = cert.issuerInfo(QSslCertificate::CommonName);
+      result["subject"] = cert.subjectInfo(QSslCertificate::CommonName);
+      result["md5"]     = md5;
+      result["sha1"]    = sha1;
+      result["url"]     = reply->request().url().toString();
+      
+      output += "{";
+      for(int l = 0; l < result.keys().size(); l++) {
+	      output += "\"" + result.keys().at(l) + "\":\"" + result.value(result.keys().at(l)) + "\",";
+      }
+      output = output.mid(0, output.length() - 1) + "}";
+    }
+    
+    QString script = "console.log('" + output + "')";
+    m_currentFrame->evaluateJavaScript(script);
+    emit certificate(output);
 }
 
 #include "webpage.moc"
